@@ -110,6 +110,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      # Publish namespaces the SSR server renders (deploy/indexing-policy.ts).
+      # Both the server and the tests read it: playwright/e2e/page/publish-ssr.spec.ts
+      # moves its workspace to one of these; every other test keeps a random
+      # namespace and so the default, non-SSR response.
+      APPFLOWY_INDEXABLE_NAMESPACES: e2e-ssr-a,e2e-ssr-b,e2e-ssr-c
     strategy:
       fail-fast: false
       matrix:
@@ -394,6 +400,15 @@ jobs:
           TEST_BDD: ${{ matrix.test-group.bdd }}
           TEST_SHARD: ${{ matrix.test-group.shard }}
           TEST_SPEC: ${{ matrix.test-group.spec }}
+
+      - name: Capture backend logs
+        if: failure()
+        continue-on-error: true
+        working-directory: AppFlowy-Cloud-Premium
+        run: |
+          mkdir -p ../test-results
+          docker compose -f docker-compose-web-ci.yml -f ../.github/docker-compose-web-ci.override.yml \
+            logs --no-color --timestamps appflowy_cloud appflowy_worker postgres > ../test-results/backend-services.log 2>&1
 
       - name: Report failed backend duplication tasks
         if: failure()
