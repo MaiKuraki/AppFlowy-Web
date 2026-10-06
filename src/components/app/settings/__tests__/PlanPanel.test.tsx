@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 
 import { BillingService } from '@/application/services/domains';
@@ -74,6 +74,41 @@ describe('PlanPanel', () => {
     expect(api.getSubscriptionLink).toHaveBeenCalledWith('workspace-1', SubscriptionPlan.Pro, SubscriptionInterval.Month);
   });
 
+  it.each([
+    [SubscriptionPlan.Free, 'Personal'],
+    [SubscriptionPlan.Pro, 'Pro'],
+  ])('shows unavailable storage while preserving the %s plan and AI usage when metering is disabled', async (plan, label) => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue(plan === SubscriptionPlan.Free ? [] : [workspaceStatus(plan)]);
+    api.getWorkspaceUsage.mockResolvedValue({
+      ...freeUsage,
+      storage_bytes: 0,
+      storage_bytes_limit: 0,
+      storage_bytes_unlimited: true,
+      storage_usage_available: false,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Unavailable for the moment')).toBeTruthy();
+    const storage = screen.getByTestId('plan-usage-storage');
+
+    expect(within(storage).getByText('Storage')).toBeTruthy();
+    expect(within(storage).queryByRole('progressbar')).toBeNull();
+    expect(storage.querySelector('svg')).toBeNull();
+    expect(screen.queryByText('Unlimited storage')).toBeNull();
+    expect(screen.queryByText('0 of 0 GB')).toBeNull();
+    expect(screen.getByTestId('plan-usage-ai').textContent).toContain('3 of 10');
+    expect(screen.getByTestId('current-plan-box').textContent).toContain(label);
+    expect(screen.queryByTestId('plan-usage-error')).toBeNull();
+  });
+
+  it.each([true, undefined])('keeps genuine unlimited storage for available or legacy responses (%s)', async (available) => {
+    api.getWorkspaceUsage.mockResolvedValue({ ...proUsage, storage_usage_available: available });
+    renderPanel();
+
+    expect(await screen.findByText('Unlimited storage')).toBeTruthy();
+    expect(screen.queryByText('Unavailable for the moment')).toBeNull();
+  });
+
   it('shows the plan while usage is pending, then offers a retry without inventing usage', async () => {
     const usage = deferred<WorkspaceUsageAndLimit>();
 
@@ -108,6 +143,43 @@ describe('PlanPanel', () => {
     expect((await screen.findByTestId('billing-error')).textContent).toContain('billing unavailable');
     expect(screen.queryByTestId('current-plan-box')).toBeNull();
     expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
+  });
+
+  it.each([
+    [SubscriptionPlan.Free, 'Free'],
+    [SubscriptionPlan.Pro, 'Pro'],
+    [SubscriptionPlan.Team, 'Team'],
+  ])('keeps the %s plan on older servers without a pricing catalog or available storage usage', async (plan, label) => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue(plan === SubscriptionPlan.Free ? [] : [workspaceStatus(plan)]);
+    api.getWorkspaceUsage.mockRejectedValue({
+      code: 1005,
+      message: 'error returned from database: Workspace storage accounting is being recovered. Please retry shortly.',
+    });
+    const getPricingCatalog = jest.fn().mockRejectedValue({ response: { status: 404 } });
+
+    render(
+      <BillingTestProviders getPricingCatalog={getPricingCatalog}>
+        <PlanPanel workspaceId='workspace-1' />
+      </BillingTestProviders>
+    );
+
+    expect((await screen.findByTestId('current-plan-box')).textContent).toContain(label);
+    expect(await screen.findByTestId('plan-usage-error')).toBeTruthy();
+    expect(screen.queryByText(/error returned from database/)).toBeNull();
+    expect(screen.queryByTestId('plan-usage-storage')).toBeNull();
+    expect(api.getWorkspaceSubscriptionStatus).toHaveBeenCalledWith('workspace-1');
+    expect(getPricingCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses subscription status for an older Pro plan even when legacy usage has finite limits', async () => {
+    api.getWorkspaceSubscriptionStatus.mockResolvedValue([workspaceStatus(SubscriptionPlan.Pro)]);
+    // Older usage responses have no newer AI counters or storage-enabled capability field.
+    api.getWorkspaceUsage.mockResolvedValue(freeUsage);
+    renderPanel();
+
+    expect(await screen.findByText('1 of 5 GB')).toBeTruthy();
+    expect(screen.getByTestId('current-plan-box').textContent).toContain('Pro');
     expect(screen.queryByTestId('plan-toggle-pro')).toBeNull();
   });
 
