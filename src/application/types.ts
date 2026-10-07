@@ -2156,7 +2156,7 @@ type LooseString = string & Record<never, never>;
 export type PricingPlanKind = 'workspace_plan' | 'workspace_add_on' | 'account_add_on';
 
 /** `plans[].id` values the billing pricing catalog publishes today. */
-export type PricingPlanId = SubscriptionPlan | 'ai_local' | 'vault_workspace';
+export type PricingPlanId = SubscriptionPlan | 'ai_local';
 
 /** Units a `quantity` feature value can carry. Unknown units fall back to `display`. */
 export type FeatureValueUnit =

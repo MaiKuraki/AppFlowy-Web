@@ -4142,8 +4142,7 @@
       "pdf_export": "Export as .pdf",
       "realtime_collaboration": "Real-time collaboration",
       "ai_images": "AI images",
-      "ai_models": "Advanced AI models",
-      "vault": "Privacy Vault"
+      "ai_models": "Advanced AI models"
     },
     "cancelPlan": {
       "title": "Sorry to see you go",
